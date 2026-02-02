@@ -1,0 +1,361 @@
+{% extends 'app/my_admin/base.html' %}
+{% load static %}
+{% load price_filters %}
+
+{% block title %}Quản lý Ưu đãi{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'app/css/admin/deals.css' %}" />
+{% endblock %}
+
+{% block content %}
+<div class="header">
+    <div class="left">
+        <h1>Quản lý Ưu đãi Cuối tuần</h1>
+        <ul class="breadcrumb">
+            <li><a href="{% url 'admin_dashboard' %}">Dashboard</a></li>
+            <li>/</li>
+            <li><a href="#" class="active">Ưu đãi</a></li>
+        </ul>
+    </div>
+    <button class="btn-add" onclick="openModal('createModal')">
+        <i class="bx bx-plus"></i> Thêm Deal Mới
+    </button>
+</div>
+
+<!-- Statistics Cards -->
+<div class="stats-grid">
+    <div class="stat-card">
+        <div class="stat-icon active">
+            <i class="bx bx-check-circle"></i>
+        </div>
+        <div class="stat-info">
+            <span class="stat-number">{{ deals|length }}</span>
+            <span class="stat-label">Tổng deal</span>
+        </div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-icon running">
+            <i class="bx bx-time"></i>
+        </div>
+        <div class="stat-info">
+            {% with active_deals=deals|dictsort:'is_active'|last %}
+            <span class="stat-number">
+                {% for deal in deals %}{% if deal.is_valid %}1{% endif %}{% endfor %}
+            </span>
+            {% endwith %}
+            <span class="stat-label">Đang chạy</span>
+        </div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-icon paused">
+            <i class="bx bx-pause-circle"></i>
+        </div>
+        <div class="stat-info">
+            <span class="stat-number">
+                {% for deal in deals %}{% if not deal.is_active %}1{% endif %}{% endfor %}
+            </span>
+            <span class="stat-label">Tạm dừng</span>
+        </div>
+    </div>
+</div>
+
+<!-- Deals Table -->
+<div class="table-container">
+    <table class="deals-table">
+        <thead>
+            <tr>
+                <th width="5%">#</th>
+                <th width="25%">Sản phẩm</th>
+                <th width="15%">Giá deal</th>
+                <th width="15%">Thời gian</th>
+                <th width="10%">Số lượng</th>
+                <th width="10%">Trạng thái</th>
+                <th width="10%">Ưu tiên</th>
+                <th width="10%">Thao tác</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for deal in deals %}
+            <tr>
+                <td>{{ forloop.counter }}</td>
+                <td>
+                    <div class="product-info">
+                        <img src="{% if deal.product.image %}{{ deal.product.image.url }}{% else %}https://via.placeholder.com/50{% endif %}" 
+                             alt="{{ deal.product.name }}">
+                        <div>
+                            <strong>{{ deal.product.name|truncatewords:5 }}</strong>
+                            <small>{{ deal.title }}</small>
+                        </div>
+                    </div>
+                </td>
+                <td>
+                    <div class="price-info">
+                        <span class="deal-price">{{ deal.deal_price|vnd }}</span>
+                        <span class="original-price">{{ deal.product.price|vnd }}</span>
+                        <span class="discount-badge">-{{ deal.discount_percent }}%</span>
+                    </div>
+                </td>
+                <td>
+                    <div class="time-info">
+                        <small><i class="bx bx-calendar"></i> {{ deal.start_time|date:"d/m H:i" }}</small>
+                        <small><i class="bx bx-calendar-check"></i> {{ deal.end_time|date:"d/m H:i" }}</small>
+                    </div>
+                </td>
+                <td>
+                    {% if deal.max_quantity > 0 %}
+                    <span>{{ deal.sold_quantity }}/{{ deal.max_quantity }}</span>
+                    {% else %}
+                    <span class="unlimited">∞</span>
+                    {% endif %}
+                </td>
+                <td>
+                    {% if deal.is_valid %}
+                    <span class="status-badge running">Đang chạy</span>
+                    {% elif not deal.is_active %}
+                    <span class="status-badge paused">Tạm dừng</span>
+                    {% elif deal.end_time < now %}
+                    <span class="status-badge expired">Hết hạn</span>
+                    {% else %}
+                    <span class="status-badge scheduled">Lên lịch</span>
+                    {% endif %}
+                </td>
+                <td>
+                    <span class="priority-badge">{{ deal.priority }}</span>
+                </td>
+                <td>
+                    <div class="actions">
+                        <button class="btn-action edit" onclick="openEditModal({{ deal.id }}, '{{ deal.product.id }}', '{{ deal.title|escapejs }}', '{{ deal.subtitle|escapejs }}', '{{ deal.description|escapejs }}', '{{ deal.deal_price }}', '{{ deal.start_time|date:'Y-m-d' }}T{{ deal.start_time|time:'H:i' }}', '{{ deal.end_time|date:'Y-m-d' }}T{{ deal.end_time|time:'H:i' }}', '{{ deal.max_quantity }}', '{{ deal.priority }}', {{ deal.is_active|yesno:'true,false' }})">
+                            <i class="bx bx-edit"></i>
+                        </button>
+                        <a href="{% url 'admin_deal_toggle' deal.id %}" class="btn-action toggle" title="Bật/Tắt">
+                            <i class="bx bx-{% if deal.is_active %}pause{% else %}play{% endif %}"></i>
+                        </a>
+                        <a href="{% url 'admin_deal_delete' deal.id %}" class="btn-action delete" 
+                           onclick="return confirm('Xác nhận xóa deal này?')">
+                            <i class="bx bx-trash"></i>
+                        </a>
+                    </div>
+                </td>
+            </tr>
+            {% empty %}
+            <tr>
+                <td colspan="8" class="empty-state">
+                    <i class="bx bx-gift"></i>
+                    <p>Chưa có deal nào. Hãy tạo deal đầu tiên!</p>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<!-- Create Deal Modal -->
+<div id="createModal" class="modal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h2><i class="bx bx-gift"></i> Tạo Deal Mới</h2>
+            <button class="close-btn" onclick="closeModal('createModal')">&times;</button>
+        </div>
+        <form action="{% url 'admin_deal_create' %}" method="POST" enctype="multipart/form-data">
+            {% csrf_token %}
+            <div class="modal-body">
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Sản phẩm <span class="required">*</span></label>
+                        <select name="product" required>
+                            <option value="">-- Chọn sản phẩm --</option>
+                            {% for product in products %}
+                            <option value="{{ product.id }}">{{ product.name }} - {{ product.price|vnd }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Giá deal <span class="required">*</span></label>
+                        <input type="number" name="deal_price" required placeholder="VD: 150000">
+                    </div>
+                </div>
+                
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Tiêu đề deal</label>
+                        <input type="text" name="title" value="Hot Deal Cuối Tuần" placeholder="VD: Flash Sale">
+                    </div>
+                    <div class="form-group">
+                        <label>Phụ đề</label>
+                        <input type="text" name="subtitle" placeholder="VD: Giảm sốc 50%">
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <label>Mô tả ngắn</label>
+                    <textarea name="description" rows="2" placeholder="Mô tả ưu đãi..."></textarea>
+                </div>
+                
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Bắt đầu <span class="required">*</span></label>
+                        <input type="datetime-local" name="start_time" required>
+                    </div>
+                    <div class="form-group">
+                        <label>Kết thúc <span class="required">*</span></label>
+                        <input type="datetime-local" name="end_time" required>
+                    </div>
+                </div>
+                
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Số lượng giới hạn</label>
+                        <input type="number" name="max_quantity" value="0" placeholder="0 = Không giới hạn">
+                    </div>
+                    <div class="form-group">
+                        <label>Độ ưu tiên</label>
+                        <input type="number" name="priority" value="0" placeholder="Số lớn = Ưu tiên cao">
+                    </div>
+                </div>
+                
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Ảnh deal (tùy chọn)</label>
+                        <input type="file" name="deal_image" accept="image/*">
+                    </div>
+                    <div class="form-group checkbox-group">
+                        <label>
+                            <input type="checkbox" name="is_active" checked>
+                            Kích hoạt ngay
+                        </label>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn-cancel" onclick="closeModal('createModal')">Hủy</button>
+                <button type="submit" class="btn-submit">
+                    <i class="bx bx-check"></i> Tạo Deal
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Edit Deal Modal -->
+<div id="editModal" class="modal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h2><i class="bx bx-edit"></i> Chỉnh sửa Deal</h2>
+            <button class="close-btn" onclick="closeModal('editModal')">&times;</button>
+        </div>
+        <form id="editForm" method="POST" enctype="multipart/form-data">
+            {% csrf_token %}
+            <div class="modal-body">
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Sản phẩm <span class="required">*</span></label>
+                        <select name="product" id="edit_product" required>
+                            {% for product in products %}
+                            <option value="{{ product.id }}">{{ product.name }} - {{ product.price|vnd }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Giá deal <span class="required">*</span></label>
+                        <input type="number" name="deal_price" id="edit_deal_price" required>
+                    </div>
+                </div>
+                
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Tiêu đề deal</label>
+                        <input type="text" name="title" id="edit_title">
+                    </div>
+                    <div class="form-group">
+                        <label>Phụ đề</label>
+                        <input type="text" name="subtitle" id="edit_subtitle">
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <label>Mô tả ngắn</label>
+                    <textarea name="description" id="edit_description" rows="2"></textarea>
+                </div>
+                
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Bắt đầu <span class="required">*</span></label>
+                        <input type="datetime-local" name="start_time" id="edit_start_time" required>
+                    </div>
+                    <div class="form-group">
+                        <label>Kết thúc <span class="required">*</span></label>
+                        <input type="datetime-local" name="end_time" id="edit_end_time" required>
+                    </div>
+                </div>
+                
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Số lượng giới hạn</label>
+                        <input type="number" name="max_quantity" id="edit_max_quantity">
+                    </div>
+                    <div class="form-group">
+                        <label>Độ ưu tiên</label>
+                        <input type="number" name="priority" id="edit_priority">
+                    </div>
+                </div>
+                
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Ảnh deal (tùy chọn)</label>
+                        <input type="file" name="deal_image" accept="image/*">
+                    </div>
+                    <div class="form-group checkbox-group">
+                        <label>
+                            <input type="checkbox" name="is_active" id="edit_is_active">
+                            Kích hoạt
+                        </label>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn-cancel" onclick="closeModal('editModal')">Hủy</button>
+                <button type="submit" class="btn-submit">
+                    <i class="bx bx-save"></i> Lưu thay đổi
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function openModal(modalId) {
+    document.getElementById(modalId).classList.add('active');
+}
+
+function closeModal(modalId) {
+    document.getElementById(modalId).classList.remove('active');
+}
+
+function openEditModal(dealId, productId, title, subtitle, description, dealPrice, startTime, endTime, maxQty, priority, isActive) {
+    document.getElementById('editForm').action = '/my-admin/deals/edit/' + dealId + '/';
+    document.getElementById('edit_product').value = productId;
+    document.getElementById('edit_title').value = title;
+    document.getElementById('edit_subtitle').value = subtitle;
+    document.getElementById('edit_description').value = description;
+    document.getElementById('edit_deal_price').value = dealPrice;
+    document.getElementById('edit_start_time').value = startTime;
+    document.getElementById('edit_end_time').value = endTime;
+    document.getElementById('edit_max_quantity').value = maxQty;
+    document.getElementById('edit_priority').value = priority;
+    document.getElementById('edit_is_active').checked = isActive;
+    
+    openModal('editModal');
+}
+
+// Đóng modal khi click bên ngoài
+window.onclick = function(event) {
+    if (event.target.classList.contains('modal')) {
+        event.target.classList.remove('active');
+    }
+}
+</script>
+{% endblock %}

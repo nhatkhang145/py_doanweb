@@ -1,0 +1,191 @@
+{% extends 'app/base.html' %}
+{% load static %}
+{% load price_filters %}
+
+{% block title %}
+  Cửa Hàng - Beauty Shop
+{% endblock %}
+
+{% block extra_css %}
+  <link rel="stylesheet" href="{% static 'app/css/shop.css' %}" />
+{% endblock %}
+{% block content %}
+  <div class="app__container">
+    <div class="grid">
+      <div class="grid__row app__content">
+        <div class="grid__column-2">
+          <nav class="category">
+            <h3 class="category_heading"><i class="category__heading-icon fas fa-list"></i> Danh Mục</h3>
+
+            <ul class="category-list">
+              <li class="category-item {% if not active_category %}active{% endif %}">
+                <a href="{% url 'shop' %}">Tất cả sản phẩm</a>
+              </li>
+
+              {% for item in sidebar_data %}
+                <li class="category-item">
+                  <a href="?category={{ item.category.id }}" style="font-weight: bold; {% if active_category == item.category.id|stringformat:'s' and not active_brand %}color: var(--primary-color);{% endif %}">{{ item.category.name }}</a>
+
+                  {% if item.brands %}
+                    <ul class="sub-category-list" style="padding-left: 15px; margin-top: 5px;">
+                      {% for brand in item.brands %}
+                        <li class="sub-category-item" style="list-style: none; margin-bottom: 5px;">
+                          <a href="?category={{ item.category.id }}&brand={{ brand.id }}" style="font-size: 1.2rem; color: #666; {% if active_brand == brand.id|stringformat:'s' and active_category == item.category.id|stringformat:'s' %}color: var(--primary-color); font-weight: bold;{% endif %}">- {{ brand.name }}</a>
+                        </li>
+                      {% endfor %}
+                    </ul>
+                  {% endif %}
+                </li>
+              {% endfor %}
+            </ul>
+          </nav>
+        </div>
+
+        <div class="grid__column-10">
+          <div class="sort-filter">
+            <span class="sort-filter__label">Sắp xếp theo:</span>
+            <a href="?{% if active_category %}category={{ active_category }}&{% endif %}{% if active_brand %}brand={{ active_brand }}&{% endif %}sort=newest" class="btn {% if request.GET.sort == 'newest' %}btn--primary{% endif %}">Mới nhất</a>
+            <a href="?{% if active_category %}category={{ active_category }}&{% endif %}{% if active_brand %}brand={{ active_brand }}&{% endif %}sort=bestseller" class="btn {% if request.GET.sort == 'bestseller' %}btn--primary{% endif %}">Bán chạy</a>
+            <a href="?{% if active_category %}category={{ active_category }}&{% endif %}{% if active_brand %}brand={{ active_brand }}&{% endif %}sort=price_asc" class="btn {% if request.GET.sort == 'price_asc' %}btn--primary{% endif %}">Giá thấp</a>
+            <a href="?{% if active_category %}category={{ active_category }}&{% endif %}{% if active_brand %}brand={{ active_brand }}&{% endif %}sort=price_desc" class="btn {% if request.GET.sort == 'price_desc' %}btn--primary{% endif %}">Giá cao</a>
+            <div class="sort-filter__page">
+              <span class="sort-filter__page-num">{{ page_obj.number }}/{{ page_obj.paginator.num_pages }}</span>
+            </div>
+          </div>
+
+          <div class="home-product">
+            <div class="products-grid">
+              {% for product in page_obj %}
+                <div class="product-card">
+                  <div class="product-card__image">
+                    <a href="{% url 'product_detail' product.id %}">
+                      <img src="{% if product.image %}{{ product.image.url }}{% else %}https://via.placeholder.com/300{% endif %}"
+                        alt="{{ product.name }}"
+                        loading="lazy" />
+                    </a>
+
+                    {% if product.active_deal %}
+                      <span class="product-card__badge deal">-{{ product.active_deal.discount_percent }}%</span>
+                    {% elif product.sale_price > 0 %}
+                      <span class="product-card__badge sale">Sale</span>
+                    {% endif %}
+
+                    <div class="product-card__overlay">
+                      <div class="product-card__actions">
+                        <button onclick="toggleWishlist(event, {{ product.id }})" class="action-btn {% if product.id in wishlist_product_ids %}wishlisted{% endif %}" title="Yêu thích">
+                          <i class="{% if product.id in wishlist_product_ids %}fas{% else %}far{% endif %} fa-heart"></i>
+                        </button>
+                        <a href="{% url 'product_detail' product.id %}" class="action-btn" title="Xem chi tiết">
+                          <i class="far fa-eye"></i>
+                        </a>
+                        <button onclick="addToCartAjax(event, {{ product.id }})" class="action-btn" title="Thêm vào giỏ">
+                          <i class="fas fa-shopping-basket"></i>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="product-card__info">
+                    <span class="product-card__category">{{ product.category.name }}</span>
+                    <h3 class="product-card__name">
+                      <a href="{% url 'product_detail' product.id %}" title="{{ product.name }}">{{ product.name }}</a>
+                    </h3>
+                    <div class="product-card__rating">
+                      <i class="fas fa-star"></i>
+                      <i class="fas fa-star"></i>
+                      <i class="fas fa-star"></i>
+                      <i class="fas fa-star"></i>
+                      <i class="fas fa-star-half-alt"></i>
+                      <span>({{ product.review_set.count|default:0 }})</span>
+                    </div>
+                    <div class="product-card__price">
+                      {% if product.active_deal %}
+                        <span class="price-current deal">{{ product.active_deal.deal_price|vnd }}</span>
+                        <span class="price-original">{{ product.price|vnd }}</span>
+                      {% elif product.sale_price > 0 %}
+                        <span class="price-current">{{ product.sale_price|vnd }}</span>
+                        <span class="price-original">{{ product.price|vnd }}</span>
+                      {% else %}
+                        <span class="price-current">{{ product.price|vnd }}</span>
+                      {% endif %}
+                    </div>
+                    <button onclick="addToCartAjax(event, {{ product.id }})" class="product-card__add-btn">
+                      <i class="fas fa-cart-plus"></i> Thêm vào giỏ
+                    </button>
+                  </div>
+                </div>
+              {% empty %}
+                <div class="products-empty">
+                  <i class="fas fa-box-open"></i>
+                  <h3>Chưa có sản phẩm nào</h3>
+                  <p>Danh mục này hiện chưa có sản phẩm. Vui lòng quay lại sau!</p>
+                </div>
+              {% endfor %}
+            </div>
+          </div>
+
+          <div class="pagination">
+            {% if page_obj.has_previous %}
+              <a href="?{% if active_category %}category={{ active_category }}&{% endif %}{% if active_brand %}brand={{ active_brand }}&{% endif %}{% if request.GET.sort %}sort={{ request.GET.sort }}&{% endif %}page={{ page_obj.previous_page_number }}" class="pagination__btn">
+                <i class="fas fa-chevron-left"></i>
+              </a>
+            {% endif %}
+
+            {% for num in page_obj.paginator.page_range %}
+              {% if page_obj.number == num %}
+                <span class="pagination__btn active">{{ num }}</span>
+              {% elif num > page_obj.number|add:'-3' and num < page_obj.number|add:'3' %}
+                <a href="?{% if active_category %}category={{ active_category }}&{% endif %}{% if active_brand %}brand={{ active_brand }}&{% endif %}{% if request.GET.sort %}sort={{ request.GET.sort }}&{% endif %}page={{ num }}" class="pagination__btn">{{ num }}</a>
+              {% endif %}
+            {% endfor %}
+
+            {% if page_obj.has_next %}
+              <a href="?{% if active_category %}category={{ active_category }}&{% endif %}{% if active_brand %}brand={{ active_brand }}&{% endif %}{% if request.GET.sort %}sort={{ request.GET.sort }}&{% endif %}page={{ page_obj.next_page_number }}" class="pagination__btn">
+                <i class="fas fa-chevron-right"></i>
+              </a>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+{% endblock %}
+
+{% block extra_js %}
+<style>
+.pagination {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 8px;
+    margin-top: 30px;
+    padding: 20px 0;
+}
+
+.pagination__btn {
+    min-width: 40px;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 10px;
+    background: white;
+    border: 1px solid #eee;
+    color: #666;
+    font-size: 1.4rem;
+    text-decoration: none;
+    transition: all 0.3s ease;
+}
+
+.pagination__btn:hover {
+    border-color: var(--primary-color);
+    color: var(--primary-color);
+}
+
+.pagination__btn.active {
+    background: var(--primary-color);
+    color: white;
+    border-color: var(--primary-color);
+}
+</style>
+{% endblock %}

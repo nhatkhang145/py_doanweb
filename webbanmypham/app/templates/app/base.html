@@ -1,0 +1,233 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="vi">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}Beauty Shop{% endblock %}</title>
+
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link rel="stylesheet" href="{% static 'app/css/base.css' %}">
+  <link rel="stylesheet" href="{% static 'app/css/style.css' %}">
+
+  {% block extra_css %}
+ <!-- Add your extra CSS here -->
+  {% endblock %}
+</head>
+
+<body>
+  <div class="main">
+    {% include 'app/includes/header.html' %}
+
+    {% block content %}
+    <!-- Main content goes here -->
+    {% endblock %}
+
+    {% include 'app/includes/footer.html' %}
+  </div>
+
+  <script src="{% static 'app/js/main.js' %}"></script>
+  
+  <!-- Toast notification -->
+  <div id="toast-container" style="position: fixed; top: 80px; right: 20px; z-index: 9999;"></div>
+  
+  <script>
+    // Lấy CSRF token từ cookie
+    function getCsrfToken() {
+      const name = 'csrftoken';
+      let cookieValue = null;
+      if (document.cookie && document.cookie !== '') {
+        const cookies = document.cookie.split(';');
+        for (let i = 0; i < cookies.length; i++) {
+          const cookie = cookies[i].trim();
+          if (cookie.substring(0, name.length + 1) === (name + '=')) {
+            cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+            break;
+          }
+        }
+      }
+      return cookieValue;
+    }
+
+    // Hàm hiển thị toast notification
+    function showToast(message, type = 'success') {
+      const container = document.getElementById('toast-container');
+      const toast = document.createElement('div');
+      toast.className = 'toast-notification';
+      toast.style.cssText = `
+        background: ${type === 'success' ? '#28a745' : '#dc3545'};
+        color: white;
+        padding: 15px 25px;
+        border-radius: 8px;
+        margin-bottom: 10px;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+        animation: slideIn 0.3s ease;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        font-size: 14px;
+      `;
+      toast.innerHTML = `
+        <i class="fas ${type === 'success' ? 'fa-check-circle' : 'fa-exclamation-circle'}"></i>
+        <span>${message}</span>
+      `;
+      container.appendChild(toast);
+      
+      // Tự động ẩn sau 3 giây
+      setTimeout(() => {
+        toast.style.animation = 'slideOut 0.3s ease';
+        setTimeout(() => toast.remove(), 300);
+      }, 3000);
+    }
+
+    // Hàm thêm vào giỏ hàng qua AJAX
+    function addToCartAjax(event, productId) {
+      event.preventDefault();
+      event.stopPropagation();
+      
+      fetch(`/add-to-cart-ajax/${productId}/`)
+        .then(response => response.json())
+        .then(data => {
+          if (data.success) {
+            showToast(data.message, 'success');
+            // Cập nhật số lượng giỏ hàng trên header (nếu có)
+            const cartCount = document.querySelector('.cart-count');
+            if (cartCount) {
+              cartCount.textContent = data.cart_count;
+            }
+          } else {
+            showToast('Có lỗi xảy ra!', 'error');
+          }
+        })
+        .catch(error => {
+          console.error('Error:', error);
+          showToast('Có lỗi xảy ra!', 'error');
+        });
+    }
+
+    // Hàm toggle wishlist qua AJAX
+    function toggleWishlist(event, productId) {
+      event.preventDefault();
+      event.stopPropagation();
+      
+      const heartBtn = event.currentTarget;
+      const heartIcon = heartBtn.querySelector('i');
+      
+      // Disable button tạm thời để tránh click nhiều lần
+      heartBtn.style.pointerEvents = 'none';
+      
+      fetch(`/wishlist/toggle/${productId}/`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRFToken': getCsrfToken()
+        }
+      })
+      .then(response => response.json())
+      .then(data => {
+        heartBtn.style.pointerEvents = 'auto';
+        
+        if (data.success) {
+          showToast(data.message, 'success');
+          
+          // Cập nhật trạng thái icon trái tim ngay lập tức
+          if (data.action === 'added') {
+            heartIcon.classList.remove('far');
+            heartIcon.classList.add('fas');
+            heartBtn.classList.add('wishlisted');
+            // Đổi style cho button trong product_detail
+            if (heartBtn.classList.contains('btn-wishlist')) {
+              heartBtn.style.background = '#e74c3c';
+              heartBtn.style.color = '#fff';
+            }
+          } else {
+            heartIcon.classList.remove('fas');
+            heartIcon.classList.add('far');
+            heartBtn.classList.remove('wishlisted');
+            // Đổi style cho button trong product_detail
+            if (heartBtn.classList.contains('btn-wishlist')) {
+              heartBtn.style.background = '#f5f5f5';
+              heartBtn.style.color = '#333';
+            }
+          }
+          
+          // Cập nhật tất cả các heart button của cùng sản phẩm trên trang
+          document.querySelectorAll(`[onclick*="toggleWishlist(event, ${productId})"]`).forEach(btn => {
+            if (btn !== heartBtn) {
+              const icon = btn.querySelector('i');
+              if (data.action === 'added') {
+                icon.classList.remove('far');
+                icon.classList.add('fas');
+                btn.classList.add('wishlisted');
+                if (btn.classList.contains('btn-wishlist')) {
+                  btn.style.background = '#e74c3c';
+                  btn.style.color = '#fff';
+                }
+              } else {
+                icon.classList.remove('fas');
+                icon.classList.add('far');
+                btn.classList.remove('wishlisted');
+                if (btn.classList.contains('btn-wishlist')) {
+                  btn.style.background = '#f5f5f5';
+                  btn.style.color = '#333';
+                }
+              }
+            }
+          });
+          
+          // Cập nhật số lượng wishlist trên header
+          const wishlistCount = document.querySelector('.wishlist-count');
+          if (wishlistCount) {
+            wishlistCount.textContent = data.wishlist_count;
+            wishlistCount.style.display = data.wishlist_count > 0 ? 'flex' : 'none';
+          }
+        } else {
+          if (data.redirect) {
+            showToast(data.message, 'error');
+            setTimeout(() => window.location.href = data.redirect, 1500);
+          } else {
+            showToast(data.message, 'error');
+          }
+        }
+      })
+      .catch(error => {
+        heartBtn.style.pointerEvents = 'auto';
+        console.error('Error:', error);
+        showToast('Có lỗi xảy ra!', 'error');
+      });
+    }
+  </script>
+  
+  <style>
+    @keyframes slideIn {
+      from { transform: translateX(100%); opacity: 0; }
+      to { transform: translateX(0); opacity: 1; }
+    }
+    @keyframes slideOut {
+      from { transform: translateX(0); opacity: 1; }
+      to { transform: translateX(100%); opacity: 0; }
+    }
+    
+    /* Wishlist button styles */
+    .action-btn.wishlisted {
+      background: #e74c3c !important;
+      color: white !important;
+    }
+    .action-btn.wishlisted i {
+      color: white !important;
+    }
+    .btn-wishlist.wishlisted {
+      background: #e74c3c !important;
+      color: white !important;
+    }
+    .btn-wishlist:hover {
+      transform: scale(1.05);
+    }
+  </style>
+  
+  {% block extra_js %}
+  <!-- Add your extra JavaScript here -->
+  {% endblock %}
+</body>
+</html>
