@@ -4,13 +4,14 @@ from django.contrib.auth.decorators import login_required, user_passes_test
 from django.core.paginator import Paginator
 from django.shortcuts import render, get_object_or_404, redirect
 from django.http import JsonResponse
-from django.db.models import Avg, Q, Sum
+from django.db.models import Avg, Q, Sum, Count
 from django.utils import timezone
 
 from datetime import datetime, timedelta
 from decimal import Decimal
 import random
 import logging
+import json
 
 from .models import (
     CustomerProfile, Product, Category, Order, Brand, 
@@ -646,12 +647,139 @@ def admin_dashboard(request):
     low_stock_count = Product.objects.filter(stock_quantity__lte=5, status=True).count()
     dead_stock_count = Product.objects.filter(stock_quantity__gt=20, status=True).count()
 
+    filter_type = request.GET.get('filter', 'month')
+    selected_year = int(request.GET.get('year', timezone.now().year))
+    selected_month = int(request.GET.get('month', timezone.now().month))
+    selected_quarter = int(request.GET.get('quarter', (timezone.now().month - 1) // 3 + 1))
+
+    now = timezone.now()
+    
+    if filter_type == 'month':
+        start_date = datetime(selected_year, selected_month, 1)
+        if selected_month == 12:
+            end_date = datetime(selected_year + 1, 1, 1)
+        else:
+            end_date = datetime(selected_year, selected_month + 1, 1)
+        period_label = f"Tháng {selected_month}/{selected_year}"
+        
+    elif filter_type == 'quarter':
+        quarter_start_month = (selected_quarter - 1) * 3 + 1
+        start_date = datetime(selected_year, quarter_start_month, 1)
+        if selected_quarter == 4:
+            end_date = datetime(selected_year + 1, 1, 1)
+        else:
+            end_date = datetime(selected_year, quarter_start_month + 3, 1)
+        period_label = f"Quý {selected_quarter}/{selected_year}"
+        
+    else:
+        start_date = datetime(selected_year, 1, 1)
+        end_date = datetime(selected_year + 1, 1, 1)
+        period_label = f"Năm {selected_year}"
+
+    start_date = timezone.make_aware(start_date)
+    end_date = timezone.make_aware(end_date)
+
+    period_orders = Order.objects.filter(created_at__gte=start_date, created_at__lt=end_date)
+    
+    total_revenue = period_orders.filter(payment_status=True).aggregate(
+        total=Sum('final_money')
+    )['total'] or 0
+    
+    period_order_count = period_orders.count()
+    completed_orders = period_orders.filter(order_status='completed').count()
+    pending_orders = period_orders.filter(order_status='pending').count()
+    cancelled_orders = period_orders.filter(order_status='cancelled').count()
+    
+    new_customers = CustomerProfile.objects.filter(
+        user__date_joined__gte=start_date,
+        user__date_joined__lt=end_date
+    ).count()
+
+    paid_orders = period_orders.filter(payment_status=True)
+    chart_labels = []
+    chart_revenue = []
+    chart_orders = []
+    
+    if filter_type == 'month':
+        from calendar import monthrange
+        days_in_month = monthrange(selected_year, selected_month)[1]
+        for day in range(1, days_in_month + 1):
+            day_start = timezone.make_aware(datetime(selected_year, selected_month, day, 0, 0, 0))
+            day_end = timezone.make_aware(datetime(selected_year, selected_month, day, 23, 59, 59))
+            day_orders = paid_orders.filter(created_at__gte=day_start, created_at__lte=day_end)
+            revenue = day_orders.aggregate(total=Sum('final_money'))['total'] or 0
+            count = day_orders.count()
+            chart_labels.append(f"{day}/{selected_month}")
+            chart_revenue.append(float(revenue))
+            chart_orders.append(count)
+            
+    elif filter_type == 'quarter':
+        quarter_start_month = (selected_quarter - 1) * 3 + 1
+        for month_offset in range(3):
+            m = quarter_start_month + month_offset
+            month_start = timezone.make_aware(datetime(selected_year, m, 1, 0, 0, 0))
+            if m == 12:
+                month_end = timezone.make_aware(datetime(selected_year + 1, 1, 1, 0, 0, 0))
+            else:
+                month_end = timezone.make_aware(datetime(selected_year, m + 1, 1, 0, 0, 0))
+            month_orders = paid_orders.filter(created_at__gte=month_start, created_at__lt=month_end)
+            revenue = month_orders.aggregate(total=Sum('final_money'))['total'] or 0
+            count = month_orders.count()
+            chart_labels.append(f"Tháng {m}")
+            chart_revenue.append(float(revenue))
+            chart_orders.append(count)
+            
+    else:
+        for m in range(1, 13):
+            month_start = timezone.make_aware(datetime(selected_year, m, 1, 0, 0, 0))
+            if m == 12:
+                month_end = timezone.make_aware(datetime(selected_year + 1, 1, 1, 0, 0, 0))
+            else:
+                month_end = timezone.make_aware(datetime(selected_year, m + 1, 1, 0, 0, 0))
+            month_orders = paid_orders.filter(created_at__gte=month_start, created_at__lt=month_end)
+            revenue = month_orders.aggregate(total=Sum('final_money'))['total'] or 0
+            count = month_orders.count()
+            chart_labels.append(f"T{m}")
+            chart_revenue.append(float(revenue))
+            chart_orders.append(count)
+
+    top_products = OrderItem.objects.filter(
+        order__created_at__gte=start_date,
+        order__created_at__lt=end_date,
+        order__payment_status=True
+    ).values('product__name').annotate(
+        total_sold=Sum('quantity'),
+        total_revenue=Sum('price')
+    ).order_by('-total_sold')[:5]
+
+    years = list(range(2020, now.year + 1))
+    months = list(range(1, 13))
+    quarters = [1, 2, 3, 4]
+
     context = {
         'customer_count': customer_count,
         'product_count': product_count,
         'order_count': order_count,
         'low_stock_count': low_stock_count,
         'dead_stock_count': dead_stock_count,
+        'filter_type': filter_type,
+        'selected_year': selected_year,
+        'selected_month': selected_month,
+        'selected_quarter': selected_quarter,
+        'period_label': period_label,
+        'total_revenue': total_revenue,
+        'period_order_count': period_order_count,
+        'completed_orders': completed_orders,
+        'pending_orders': pending_orders,
+        'cancelled_orders': cancelled_orders,
+        'new_customers': new_customers,
+        'chart_labels': json.dumps(chart_labels),
+        'chart_revenue': json.dumps(chart_revenue),
+        'chart_orders': json.dumps(chart_orders),
+        'top_products': top_products,
+        'years': years,
+        'months': months,
+        'quarters': quarters,
     }
     return render(request, 'app/my_admin/dashboard.html', context)
 
